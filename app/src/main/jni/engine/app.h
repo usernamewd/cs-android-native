@@ -35,6 +35,16 @@ public:
     Mesh&   unit_box()     { return unit_box_; }
     Mesh&   unit_quad()    { return unit_quad_; }
 
+    // Health bits — non-zero means something failed during GL init and the
+    // renderer is in a degraded state. Drawn as a magenta diagnostic strip.
+    enum HealthBit : unsigned {
+        kHealthOk        = 0u,
+        kWorldShaderBad  = 1u << 0,
+        kHudShaderBad    = 1u << 1,
+        kAssetsBad       = 1u << 2,
+    };
+    unsigned gl_health() const { return gl_health_; }
+
 private:
     App() = default;
 
@@ -50,6 +60,7 @@ private:
     int width_{0}, height_{0};
     long  last_ns_{0};
     bool  gl_ready_{false};
+    unsigned gl_health_{0};
     std::string files_dir_;
     std::string apk_path_;
 };

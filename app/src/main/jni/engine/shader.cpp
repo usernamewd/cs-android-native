@@ -53,8 +53,14 @@ bool Shader::compile_from_source(const char* vs, const char* fs) {
 
 bool Shader::compile_from_assets(const char* vs_path, const char* fs_path) {
     std::string v, f;
-    if (!AssetIO::instance().load_text(vs_path, v)) return false;
-    if (!AssetIO::instance().load_text(fs_path, f)) return false;
+    if (!AssetIO::instance().load_text(vs_path, v)) {
+        LOGE("asset load failed: %s", vs_path);
+        return false;
+    }
+    if (!AssetIO::instance().load_text(fs_path, f)) {
+        LOGE("asset load failed: %s", fs_path);
+        return false;
+    }
     return compile_from_source(v.c_str(), f.c_str());
 }
 

@@ -32,37 +32,83 @@ void App::on_create(const std::string& files_dir, const std::string& apk_path) {
 }
 
 void App::init_gl_resources() {
-    if (gl_ready_) return;
-    bool ok = world_shader_.compile_from_assets("shaders/lit.vert", "shaders/lit.frag");
-    if (!ok) {
-        LOGE("world shader missing; using inline fallback");
-        const char* vs =
-            "#version 300 es\nlayout(location=0) in vec3 a_pos;\n"
-            "layout(location=1) in vec3 a_nrm;\nuniform mat4 u_mvp;\nuniform mat4 u_m;\n"
-            "out vec3 v_nrm; out vec3 v_world;\nvoid main(){ v_nrm=mat3(u_m)*a_nrm;"
-            "v_world=(u_m*vec4(a_pos,1)).xyz; gl_Position=u_mvp*vec4(a_pos,1); }";
-        const char* fs =
-            "#version 300 es\nprecision highp float;in vec3 v_nrm;in vec3 v_world;"
-            "out vec4 frag;uniform vec3 u_color;uniform vec3 u_light;\nvoid main(){"
-            "float d=max(dot(normalize(v_nrm),normalize(u_light)),0.0);"
-            "vec3 c=u_color*(0.25+0.75*d); frag=vec4(c,1); }";
-        world_shader_.compile_from_source(vs, fs);
+    // Always re-initialize on each surface_created callback. The GL context
+    // can be (and on Android often is) torn down across pause/resume — when
+    // the new context comes back, all program/VAO/VBO IDs from the old one
+    // are dead, so we must rebuild.
+    gl_health_ = kHealthOk;
+
+    LOGW("GL_VENDOR=%s",   reinterpret_cast<const char*>(glGetString(GL_VENDOR)));
+    LOGW("GL_RENDERER=%s", reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
+    LOGW("GL_VERSION=%s",  reinterpret_cast<const char*>(glGetString(GL_VERSION)));
+    LOGW("GLSL=%s",        reinterpret_cast<const char*>(
+                                glGetString(GL_SHADING_LANGUAGE_VERSION)));
+
+    // Inline shader sources — used both as the fallback when assets fail
+    // AND as the primary path if asset compilation fails for any reason
+    // (compressed entry, malformed text, GLSL parser quirk, etc.).
+    static const char* kLitVS =
+        "#version 300 es\n"
+        "layout(location=0) in vec3 a_pos;\n"
+        "layout(location=1) in vec3 a_nrm;\n"
+        "uniform mat4 u_mvp; uniform mat4 u_m;\n"
+        "out vec3 v_nrm; out vec3 v_world;\n"
+        "void main(){\n"
+        "  v_nrm   = mat3(u_m) * a_nrm;\n"
+        "  v_world = (u_m * vec4(a_pos,1.0)).xyz;\n"
+        "  gl_Position = u_mvp * vec4(a_pos,1.0);\n"
+        "}\n";
+    static const char* kLitFS =
+        "#version 300 es\nprecision highp float;\n"
+        "in vec3 v_nrm; in vec3 v_world; out vec4 frag;\n"
+        "uniform vec3 u_color; uniform vec3 u_light;\n"
+        "void main(){\n"
+        "  float d = max(dot(normalize(v_nrm), normalize(u_light)), 0.0);\n"
+        "  frag = vec4(u_color * (0.25 + 0.75 * d), 1.0);\n"
+        "}\n";
+    static const char* kHudVS =
+        "#version 300 es\n"
+        "layout(location=0) in vec3 a_pos;\n"
+        "layout(location=2) in vec2 a_uv;\n"
+        "uniform mat4 u_proj; uniform vec4 u_rect;\n"
+        "out vec2 v_uv;\n"
+        "void main(){\n"
+        "  vec2 p = u_rect.xy + a_uv * u_rect.zw;\n"
+        "  v_uv = a_uv;\n"
+        "  gl_Position = u_proj * vec4(p, 0.0, 1.0);\n"
+        "}\n";
+    static const char* kHudFS =
+        "#version 300 es\nprecision mediump float;\n"
+        "in vec2 v_uv; out vec4 frag; uniform vec4 u_color;\n"
+        "void main(){ frag = u_color; }\n";
+
+    bool world_ok = world_shader_.compile_from_assets(
+                        "shaders/lit.vert", "shaders/lit.frag");
+    if (!world_ok) {
+        LOGE("lit shader from assets failed; trying inline");
+        world_ok = world_shader_.compile_from_source(kLitVS, kLitFS);
     }
-    bool ok2 = hud_shader_.compile_from_assets("shaders/hud.vert", "shaders/hud.frag");
-    if (!ok2) {
-        const char* vs =
-            "#version 300 es\nlayout(location=0) in vec3 a_pos;\nlayout(location=2) in vec2 a_uv;\n"
-            "uniform mat4 u_proj; uniform vec4 u_rect;\nout vec2 v_uv;\n"
-            "void main(){ vec2 p=u_rect.xy+a_uv*u_rect.zw; v_uv=a_uv;"
-            "gl_Position=u_proj*vec4(p,0,1); }";
-        const char* fs =
-            "#version 300 es\nprecision mediump float;in vec2 v_uv;out vec4 frag;"
-            "uniform vec4 u_color;\nvoid main(){ frag=u_color; }";
-        hud_shader_.compile_from_source(vs, fs);
+    if (!world_ok) {
+        LOGE("lit shader inline ALSO failed");
+        gl_health_ |= kWorldShaderBad;
     }
+
+    bool hud_ok = hud_shader_.compile_from_assets(
+                      "shaders/hud.vert", "shaders/hud.frag");
+    if (!hud_ok) {
+        LOGE("hud shader from assets failed; trying inline");
+        hud_ok = hud_shader_.compile_from_source(kHudVS, kHudFS);
+    }
+    if (!hud_ok) {
+        LOGE("hud shader inline ALSO failed");
+        gl_health_ |= kHudShaderBad;
+    }
+
     unit_box_  = Mesh::make_box({1, 1, 1});
     unit_quad_ = Mesh::make_quad();
-    gl_ready_ = true;
+    gl_ready_  = true;
+
+    LOGW("init_gl_resources done, health=0x%x", gl_health_);
 }
 
 void App::on_surface_created() {
@@ -70,6 +116,7 @@ void App::on_surface_created() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
+    gl_ready_ = false;          // force re-init: GL ids from old context are dead
     init_gl_resources();
     if (game_) game_->on_surface_ready();
 }
@@ -96,6 +143,17 @@ void App::on_draw_frame() {
     if (game_) game_->update(dt);
     input_.begin_frame();
 
+    if (gl_health_ != kHealthOk) {
+        // Diagnostic: GL came up but something is broken. Flash bright magenta
+        // so the user can see "yes the binary is running, no rendering is
+        // working" — and check logcat for the matching LOGE shader log.
+        float t = ((mono_ns() / 100000000ll) & 1) ? 1.0f : 0.4f;
+        glClearColor(t, 0.f, t, 1.f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        return;
+    }
+
+    glClearColor(0.05f, 0.07f, 0.10f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if (game_) game_->render();
 }

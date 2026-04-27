@@ -40,6 +40,9 @@ void draw_rect(eng::App& app, float x, float y, float w, float h,
 
 void Hud::render(eng::App& app, const Match& m) {
     glDisable(GL_DEPTH_TEST);
+    // See note in Menu::render — the HUD ortho matrix flips Y, so unit_quad's
+    // CCW winding ends up CW after projection and would be back-face culled.
+    glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -92,6 +95,7 @@ void Hud::render(eng::App& app, const Match& m) {
     draw_rect(app, W * 0.86f, H * 0.70f, H * 0.08f, H * 0.08f, 1, 0.4f, 0.2f, 0.4f);
 
     glDisable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 }
 

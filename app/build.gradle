@@ -67,6 +67,13 @@ android {
         }
     }
 
+    androidResources {
+        // Keep shader sources uncompressed in the APK so that
+        // AAsset_getBuffer / AAsset_read see real bytes regardless of
+        // compression heuristics aapt might apply.
+        noCompress 'vert', 'frag', 'glsl', 'spv'
+    }
+
     buildFeatures {
         viewBinding false
         buildConfig true

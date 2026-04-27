@@ -56,6 +56,10 @@ void Menu::update(eng::App& app) {
 
 void Menu::render(eng::App& app) {
     glDisable(GL_DEPTH_TEST);
+    // The HUD ortho projection flips Y (m[5] = -2/H), which inverts the unit
+    // quad's effective winding from CCW to CW; with GL_CULL_FACE on, every
+    // HUD quad would be back-face culled and the menu would be invisible.
+    glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -86,6 +90,7 @@ void Menu::render(eng::App& app) {
     draw(app, {W*0.35f, H*0.74f, W*0.30f, H*0.12f}, 0.95f * pulse, 0.20f, 0.20f, 0.95f);
 
     glDisable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 }
 
