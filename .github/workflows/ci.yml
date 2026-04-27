@@ -21,10 +21,13 @@ jobs:
 
       - name: Install required SDK + NDK packages
         run: |
-          set -euxo pipefail
+          set -eux
           # The runner ships with Android SDK preinstalled at $ANDROID_SDK_ROOT.
           # We just install the specific NDK / cmake / build-tools we need.
-          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
+          # Note: `yes | sdkmanager` triggers SIGPIPE on `yes` once sdkmanager
+          # finishes reading; we swallow that with `|| true` rather than
+          # enabling pipefail and failing the step.
+          { yes || true; } | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "platforms;android-34" \
